@@ -45,4 +45,10 @@ namespace VDISPLAY {
 	bool removeVirtualDisplay(const GUID& guid);
 
 	std::vector<std::wstring> matchDisplay(std::wstring sMatch);
+
+	// One screen alone (Screen Mode's Solo): every screen but deviceName off, for now (not saved as windows' own
+	// layout), the layout from before kept to put back; true when windows took it
+	bool isolateDisplay(const wchar_t* deviceName);
+	// The layout from before isolateDisplay put back, if one's kept; true when there was nothing to, or windows took it
+	bool endIsolation();
 }

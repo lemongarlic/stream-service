@@ -1137,6 +1137,21 @@ namespace video {
     }
   }
 
+  /**
+   * @brief refresh_displays, for a capture restarting onto the stream's own screen (`preferred`): one just made (a
+   * virtual screen Screen Mode added) can be listed a moment before it can be captured, so it's looked for again for a
+   * while before another screen's taken in its place.
+   */
+  void refresh_displays_for(platf::mem_type_e dev_type, std::vector<std::string> &display_names, int &current_display_index, std::string &preferred_display_name) {
+    for (int tries = 0;; ++tries) {
+      refresh_displays(dev_type, display_names, current_display_index, preferred_display_name);
+      if (preferred_display_name.empty() || tries >= 15 || std::find(display_names.begin(), display_names.end(), preferred_display_name) != display_names.end()) {
+        return;
+      }
+      std::this_thread::sleep_for(200ms);
+    }
+  }
+
   void refresh_displays(platf::mem_type_e dev_type, std::vector<std::string> &display_names, int &current_display_index) {
     static std::string empty_str = "";
     refresh_displays(dev_type, display_names, current_display_index, empty_str);
@@ -1291,6 +1306,12 @@ namespace video {
     // Capture takes place on this thread
     platf::adjust_thread_priority(platf::thread_priority_e::critical);
 
+    // the capture's pace, logged every 5 s: frames captured, and the longest gap between two (stutter shows here first)
+    auto pace_since = std::chrono::steady_clock::now();
+    auto pace_last = pace_since;
+    int pace_frames = 0;
+    std::chrono::steady_clock::duration pace_longest {};
+
     while (capture_ctx_queue->running()) {
       bool artificial_reinit = false;
 
@@ -1308,6 +1329,19 @@ namespace video {
 
           ++capture_ctx;
         })
+
+        if (frame_captured) {
+          auto now = std::chrono::steady_clock::now();
+          pace_longest = std::max(pace_longest, now - pace_last);
+          pace_last = now;
+          ++pace_frames;
+          if (now - pace_since >= 5s) {
+            BOOST_LOG(info) << "Capture pace: "sv << pace_frames << " frames in "sv << std::chrono::duration_cast<std::chrono::milliseconds>(now - pace_since).count() << " ms, longest gap "sv << std::chrono::duration_cast<std::chrono::milliseconds>(pace_longest).count() << " ms"sv;
+            pace_since = now;
+            pace_frames = 0;
+            pace_longest = {};
+          }
+        }
 
         if (!capture_ctx_queue->running()) {
           return false;
@@ -1373,12 +1407,17 @@ namespace video {
               disp.reset();
 
               // Refresh display names since a display removal might have caused the reinitialization
-              refresh_displays(encoder.platform_formats->dev_type, display_names, display_p, proc::proc.display_name);
+              refresh_displays_for(encoder.platform_formats->dev_type, display_names, display_p, proc::proc.display_name);
 
               // Process any pending display switch with the new list of displays
+              // (-1: the stream's own screen, proc::proc.display_name, as found above)
               if (switch_display_event->peek()) {
-                display_p = std::clamp(*switch_display_event->pop(), 0, (int) display_names.size() - 1);
+                if (auto to = *switch_display_event->pop(); to >= 0) {
+                  display_p = std::clamp(to, 0, (int) display_names.size() - 1);
+                }
               }
+
+              BOOST_LOG(info) << "Capturing "sv << display_names[display_p] << " (the stream's screen: "sv << proc::proc.display_name << ')';
 
               // reset_display() will sleep between retries
               reset_display(disp, encoder.platform_formats->dev_type, display_names[display_p], capture_ctxs.front().config);
@@ -2204,12 +2243,16 @@ namespace video {
 
     while (encode_session_ctx_queue.running()) {
       // Refresh display names since a display removal might have caused the reinitialization
-      refresh_displays(encoder.platform_formats->dev_type, display_names, display_p);
+      refresh_displays_for(encoder.platform_formats->dev_type, display_names, display_p, proc::proc.display_name);
 
-      // Process any pending display switch with the new list of displays
+      // Process any pending display switch with the new list of displays (-1: the stream's own screen, as found above)
       if (switch_display_event->peek()) {
-        display_p = std::clamp(*switch_display_event->pop(), 0, (int) display_names.size() - 1);
+        if (auto to = *switch_display_event->pop(); to >= 0) {
+          display_p = std::clamp(to, 0, (int) display_names.size() - 1);
+        }
       }
+
+      BOOST_LOG(info) << "Capturing "sv << display_names[display_p] << " (the stream's screen: "sv << proc::proc.display_name << ')';
 
       // reset_display() will sleep between retries
       reset_display(disp, encoder.platform_formats->dev_type, display_names[display_p], synced_session_ctxs.front()->config);

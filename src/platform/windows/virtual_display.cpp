@@ -13,6 +13,7 @@
 #include <dxgi1_6.h>
 
 #include "virtual_display.h"
+#include "src/logging.h"
 
 using namespace SUDOVDA;
 
@@ -667,20 +668,32 @@ std::wstring createVirtualDisplay(
 
 	VIRTUAL_DISPLAY_ADD_OUT output;
 	if (!AddVirtualDisplay(SUDOVDA_DRIVER_HANDLE, width, height, fps, guid, s_client_name, s_client_uid, output)) {
-		printf("[SUDOVDA] Failed to add virtual display.\n");
+		BOOST_LOG(warning) << "SudoVDA: the driver didn't add the virtual screen (" << GetLastError() << ')';
 		return std::wstring();
 	}
 
-	uint32_t retryInterval = 20;
+	// its name once windows has it on: up to 5 s (a new screen can take a while to come up, the more so with
+	// hardware-accelerated GPU scheduling on)
 	wchar_t deviceName[CCHDEVICENAME]{};
+	auto waited = 0;
 	while (!GetAddedDisplayName(output, deviceName)) {
-		Sleep(retryInterval);
-		if (retryInterval > 320) {
-			printf("[SUDOVDA] Cannot get name for newly added virtual display!\n");
+		// windows only turns a new screen on by itself while it extends onto new screens (its display mode "Extend";
+		// "PC screen only" leaves it off): not on after a moment, it's extended onto
+		if (waited == 500) {
+			UINT32 all = 0, allModes = 0, active = 0, activeModes = 0;
+			GetDisplayConfigBufferSizes(QDC_ALL_PATHS, &all, &allModes);
+			GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &active, &activeModes);
+			auto extended = SetDisplayConfig(0, nullptr, 0, nullptr, SDC_APPLY | SDC_TOPOLOGY_EXTEND);
+			BOOST_LOG(info) << "SudoVDA: the virtual screen isn't on yet (" << active << " of " << all << " display paths on): extending onto it: " << extended;
+		}
+		if (waited >= 5000) {
+			BOOST_LOG(warning) << "SudoVDA: the virtual screen was added, but windows didn't name it within 5 s";
 			return std::wstring();
 		}
-		retryInterval *= 2;
+		Sleep(50);
+		waited += 50;
 	}
+	BOOST_LOG(info) << "SudoVDA: the virtual screen came up in " << waited << " ms";
 
 	wprintf(L"[SUDOVDA] Virtual display added successfully: %ls\n", deviceName);
 	printf("[SUDOVDA] Configuration: W: %d, H: %d, FPS: %d\n", width, height, fps);
@@ -1195,4 +1208,71 @@ std::vector <std::wstring> matchDisplay(std::wstring sMatch) {
 }
 
 // END ISOLATED DISPLAY METHODS
+
+namespace {
+	// the layout from before isolateDisplay, while it's on
+	std::vector<DISPLAYCONFIG_PATH_INFO> isolatedFromPaths;
+	std::vector<DISPLAYCONFIG_MODE_INFO> isolatedFromModes;
+}
+
+bool isolateDisplay(const wchar_t* deviceName) {
+	UINT32 pathCount = 0, modeCount = 0;
+	if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount, &modeCount) != ERROR_SUCCESS) {
+		return false;
+	}
+	std::vector<DISPLAYCONFIG_PATH_INFO> paths(pathCount);
+	std::vector<DISPLAYCONFIG_MODE_INFO> modes(modeCount);
+	if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths.data(), &modeCount, modes.data(), nullptr) != ERROR_SUCCESS) {
+		return false;
+	}
+	paths.resize(pathCount);
+	modes.resize(modeCount);
+
+	for (const auto& path : paths) {
+		DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName = {};
+		sourceName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+		sourceName.header.size = sizeof(sourceName);
+		sourceName.header.adapterId = path.sourceInfo.adapterId;
+		sourceName.header.id = path.sourceInfo.id;
+		if (DisplayConfigGetDeviceInfo(&sourceName.header) != ERROR_SUCCESS || std::wstring_view(sourceName.viewGdiDeviceName) != std::wstring_view(deviceName)) {
+			continue;
+		}
+
+		// that screen's path alone, its source and target modes with it, the source at 0,0 (the main screen)
+		DISPLAYCONFIG_PATH_INFO only = path;
+		std::vector<DISPLAYCONFIG_MODE_INFO> onlyModes;
+		if (path.sourceInfo.modeInfoIdx != DISPLAYCONFIG_PATH_MODE_IDX_INVALID && path.sourceInfo.modeInfoIdx < modes.size()) {
+			auto source = modes[path.sourceInfo.modeInfoIdx];
+			source.sourceMode.position = {0, 0};
+			only.sourceInfo.modeInfoIdx = (UINT32) onlyModes.size();
+			onlyModes.push_back(source);
+		}
+		if (path.targetInfo.modeInfoIdx != DISPLAYCONFIG_PATH_MODE_IDX_INVALID && path.targetInfo.modeInfoIdx < modes.size()) {
+			only.targetInfo.modeInfoIdx = (UINT32) onlyModes.size();
+			onlyModes.push_back(modes[path.targetInfo.modeInfoIdx]);
+		}
+
+		if (isolatedFromPaths.empty()) {
+			isolatedFromPaths = paths;
+			isolatedFromModes = modes;
+		}
+		return SetDisplayConfig(1, &only, (UINT32) onlyModes.size(), onlyModes.data(), SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES) == ERROR_SUCCESS;
+	}
+	return false;
+}
+
+bool endIsolation() {
+	if (isolatedFromPaths.empty()) {
+		return true;
+	}
+	auto ok = SetDisplayConfig(
+		(UINT32) isolatedFromPaths.size(), isolatedFromPaths.data(),
+		(UINT32) isolatedFromModes.size(), isolatedFromModes.data(),
+		SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES
+	) == ERROR_SUCCESS;
+	isolatedFromPaths.clear();
+	isolatedFromModes.clear();
+	return ok;
+}
+
 }

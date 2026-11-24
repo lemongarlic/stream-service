@@ -140,7 +140,19 @@ namespace proc {
     void pause();
     void terminate(bool immediate = false, bool needs_refresh = true);
 
+    /**
+     * @brief Screen Mode ("solo", "dual", "mirror": see config::video_t::screen_mode), taken at once: a stream that's
+     * on gets its virtual screen made or removed, alone or beside the others, and its capture moved to the screen the
+     * new mode streams.
+     */
+    void set_screen_mode(const std::string &mode);
+
   private:
+#ifdef _WIN32
+    // a virtual screen for the stream that's on, at its client's size (and alone, in Solo); true when it was made
+    bool create_virtual_display();
+#endif
+
     int _app_id = 0;
     std::string _app_name;
 

@@ -149,6 +149,13 @@ namespace config {
     std::string fallback_mode;
     bool isolated_virtual_display_option;
     bool ignore_encoder_probe_failure;
+
+    /**
+     * What a stream's screens are (netcade's Screen Mode; see STREAM-SERVICE.md): "solo" a virtual screen at the
+     * client's size, the only one on; "dual" a virtual screen beside the others; "mirror" no virtual screen, the
+     * main screen as it is. Changed live through the control channel (proc::proc.set_screen_mode).
+     */
+    std::string screen_mode;
   };
 
   struct audio_t {

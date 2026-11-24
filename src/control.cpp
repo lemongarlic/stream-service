@@ -111,6 +111,26 @@ namespace control {
            file_handler::write_file(config::sunshine.config_file.c_str(), out.str());
            return json(true);
          }},
+        // Screen Mode: what a stream's screens are (solo, dual, mirror), kept in the settings file and taken at once
+        {"screenMode", [](const json &args) {
+           if (!args.contains("mode")) {
+             return json(config::video.screen_mode);
+           }
+           auto mode = text(args, "mode");
+           if (mode != "solo" && mode != "dual" && mode != "mirror") {
+             throw std::runtime_error("no screen mode " + mode);
+           }
+           auto values = config_values();
+           values["screen_mode"] = mode;
+           std::stringstream out;
+           for (auto &[key, value] : values.items()) {
+             out << key << " = " << value.get<std::string>() << std::endl;
+           }
+           file_handler::write_file(config::sunshine.config_file.c_str(), out.str());
+           proc::proc.set_screen_mode(mode);
+           event("screenModeChanged", {{"mode", mode}});
+           return json(mode);
+         }},
         {"resetDisplayPersistence", [](const json &) {
            return json(display_device::reset_persistence());
          }},
