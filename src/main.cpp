@@ -9,7 +9,7 @@
 #include <iostream>
 
 // local includes
-#include "confighttp.h"
+#include "control.h"
 #include "display_device.h"
 #include "entry_handler.h"
 #include "globals.h"
@@ -18,7 +18,6 @@
 #include "main.h"
 #include "nvhttp.h"
 #include "process.h"
-#include "system_tray.h"
 #include "upnp.h"
 #include "uuid.h"
 #include "video.h"
@@ -95,45 +94,6 @@ WINAPI BOOL ConsoleCtrlHandler(DWORD type) {
   return FALSE;
 }
 #endif
-
-#if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
-constexpr bool tray_is_enabled = true;
-#else
-constexpr bool tray_is_enabled = false;
-#endif
-
-void mainThreadLoop(const std::shared_ptr<safe::event_t<bool>> &shutdown_event) {
-  bool run_loop = false;
-
-  // Conditions that would require the main thread event loop
-#ifndef _WIN32
-  run_loop = tray_is_enabled;  // On Windows, tray runs in separate thread, so no main loop needed for tray
-#endif
-
-  if (!run_loop) {
-    BOOST_LOG(info) << "No main thread features enabled, skipping event loop"sv;
-    return;
-  }
-
-  // Main thread event loop
-  BOOST_LOG(info) << "Starting main loop"sv;
-  while (true) {
-    if (shutdown_event->peek()) {
-      BOOST_LOG(info) << "Shutdown event detected, breaking main loop"sv;
-      if (tray_is_enabled && config::sunshine.system_tray) {
-        system_tray::end_tray();
-      }
-      break;
-    }
-
-    if (tray_is_enabled) {
-      system_tray::process_tray_events();
-    }
-
-    // Sleep to avoid busy waiting
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  }
-}
 
 int main(int argc, char *argv[]) {
   lifetime::argv = argv;
@@ -428,38 +388,23 @@ int main(int argc, char *argv[]) {
   }
 
   std::thread httpThread {nvhttp::start};
-  std::thread configThread {confighttp::start};
+  std::thread controlThread {control::start};
   std::thread rtspThread {rtsp_stream::start};
 
 #ifdef _WIN32
   // If we're using the default port and GameStream is enabled, warn the user
   if (config::sunshine.port == 47989 && is_gamestream_enabled()) {
     BOOST_LOG(fatal) << "GameStream is still enabled in GeForce Experience! This *will* cause streaming problems with Apollo!"sv;
-    BOOST_LOG(fatal) << "Disable GameStream on the SHIELD tab in GeForce Experience or change the Port setting on the Advanced tab in the Apollo Web UI."sv;
+    BOOST_LOG(fatal) << "Disable GameStream on the SHIELD tab in GeForce Experience or change stream-service's port setting."sv;
   }
 #endif
 
-  if (tray_is_enabled && config::sunshine.system_tray) {
-    BOOST_LOG(info) << "Starting system tray"sv;
-#ifdef _WIN32
-    // TODO: Windows has a weird bug where when running as a service and on the first Windows boot,
-    // he tray icon would not appear even though Sunshine is running correctly otherwise.
-    // Restarting the service would allow the icon to appear normally.
-    // For now we will keep the Windows tray icon on a separate thread.
-    // Ideally, we would run the system tray on the main thread for all platforms.
-    system_tray::init_tray_threaded();
-#else
-    system_tray::init_tray();
-#endif
-  }
 
-  mainThreadLoop(shutdown_event);
-
-  // Wait for shutdown, this is not necessary when we're using the main event loop
+  // (headless: nothing to run on the main thread but waiting for the end)
   shutdown_event->view();
 
   httpThread.join();
-  configThread.join();
+  controlThread.join();
   rtspThread.join();
 
   task_pool.stop();
@@ -470,11 +415,6 @@ int main(int argc, char *argv[]) {
   if (nvprefs_instance.owning_undo_file() && nvprefs_instance.load()) {
     nvprefs_instance.restore_global_profile();
     nvprefs_instance.unload();
-  }
-
-  // Stop the threaded tray if it was started
-  if (tray_is_enabled && config::sunshine.system_tray) {
-    system_tray::end_tray_threaded();
   }
 #endif
 

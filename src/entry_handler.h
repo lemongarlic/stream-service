@@ -13,16 +13,6 @@
 #include "thread_safe.h"
 
 /**
- * @brief Launch the Web UI.
- * @param path Optional path to append to the base URL.
- * @examples
- * launch_ui();
- * launch_ui("/pin");
- * @examples_end
- */
-void launch_ui(const std::optional<std::string> &path = std::nullopt);
-
-/**
  * @brief Functions for handling command line arguments.
  */
 namespace args {
@@ -124,13 +114,5 @@ namespace service_ctrl {
    * @examples_end
    */
   bool start_service();
-
-  /**
-   * @brief Wait for the UI to be ready after Sunshine startup.
-   * @examples
-   * wait_for_ui_ready();
-   * @examples_end
-   */
-  bool wait_for_ui_ready();
 }  // namespace service_ctrl
 #endif

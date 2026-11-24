@@ -32,7 +32,7 @@
 #include "platform/common.h"
 #include "process.h"
 #include "httpcommon.h"
-#include "system_tray.h"
+#include "control.h"
 #include "utility.h"
 #include "video.h"
 #include "uuid.h"
@@ -170,9 +170,7 @@ namespace proc {
     allow_client_commands = false;
     placebo = true;
 
-#if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
-    system_tray::update_tray_playing(_app_name);
-#endif
+    control::event("appStarted", {{"name", _app_name}});
   }
 
   int proc_t::execute(const ctx_t& app, std::shared_ptr<rtsp_stream::launch_session_t> launch_session) {
@@ -553,9 +551,7 @@ namespace proc {
 
     fg.disable();
 
-#if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
-    system_tray::update_tray_playing(_app.name);
-#endif
+    control::event("appStarted", {{"name", _app.name}});
 
     return 0;
   }
@@ -584,11 +580,9 @@ namespace proc {
       BOOST_LOG(info) << "Adjust this behavior in the Applications tab or apps.json if this is not what you want."sv;
       placebo = true;
 
-    #if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
       if (_process.native_exit_code() != 0) {
-        system_tray::update_tray_launch_error(proc::proc.get_last_run_app_name(), _process.native_exit_code());
+        control::event("appFailed", {{"name", proc::proc.get_last_run_app_name()}, {"exitCode", _process.native_exit_code()}});
       }
-    #endif
 
       return _app_id;
     }
@@ -698,9 +692,7 @@ namespace proc {
       exec_thread.detach();
     }
 
-#if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
-    system_tray::update_tray_pausing(proc::proc.get_last_run_app_name());
-#endif
+    control::event("appPaused", {{"name", proc::proc.get_last_run_app_name()}});
   }
 
   void proc_t::terminate(bool immediate, bool needs_refresh) {
@@ -780,9 +772,7 @@ namespace proc {
       display_device::revert_configuration();
 #endif
 
-#if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
-      system_tray::update_tray_stopped(proc::proc.get_last_run_app_name());
-#endif
+      control::event("appStopped", {{"name", proc::proc.get_last_run_app_name()}});
     }
 
     // Load the configured output_name first

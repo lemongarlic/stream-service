@@ -33,7 +33,7 @@
 #include "process.h"
 #include "rtsp.h"
 #include "stream.h"
-#include "system_tray.h"
+#include "control.h"
 #include "utility.h"
 #include "uuid.h"
 #include "video.h"
@@ -369,9 +369,7 @@ namespace nvhttp {
     client_t &client = client_root;
     client.named_devices.push_back(named_cert_p);
 
-#if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
-    system_tray::update_tray_paired(named_cert_p->name);
-#endif
+    control::event("paired", {{"name", named_cert_p->name}, {"uuid", named_cert_p->uuid}});
 
     if (!config::sunshine.flags[config::flag::FRESH_STATE]) {
       save_state();
@@ -790,9 +788,7 @@ namespace nvhttp {
 
           getservercert(ptr->second, tree, pin);
         } else {
-#if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
-          system_tray::update_tray_require_pin();
-#endif
+          control::event("pinRequested");
           ptr->second.async_insert_pin.response = std::move(response);
 
           fg.disable();
@@ -1343,6 +1339,7 @@ namespace nvhttp {
     tree.put("root.gamesession", 1);
 
     rtsp_stream::launch_session_raise(launch_session);
+    control::event("sessionStarting", {{"uuid", launch_session->unique_id}, {"name", launch_session->device_name}, {"width", launch_session->width}, {"height", launch_session->height}, {"fps", launch_session->fps}, {"hdr", launch_session->enable_hdr}});
   }
 
   void resume(bool &host_audio, resp_https_t response, req_https_t request) {
@@ -1450,10 +1447,9 @@ namespace nvhttp {
     tree.put("root.resume", 1);
 
     rtsp_stream::launch_session_raise(launch_session);
+    control::event("sessionStarting", {{"uuid", launch_session->unique_id}, {"name", launch_session->device_name}, {"width", launch_session->width}, {"height", launch_session->height}, {"fps", launch_session->fps}, {"hdr", launch_session->enable_hdr}});
 
-#if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
-    system_tray::update_tray_client_connected(named_cert_p->name);
-#endif
+    
   }
 
   void cancel(resp_https_t response, req_https_t request) {

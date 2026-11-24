@@ -254,3 +254,5 @@ list(APPEND PLATFORM_LIBRARIES
 include_directories(
         SYSTEM
         "${CMAKE_SOURCE_DIR}/third-party/glad/include")
+
+list(APPEND PLATFORM_TARGET_FILES "${CMAKE_SOURCE_DIR}/src/platform/unix/control_transport.cpp")

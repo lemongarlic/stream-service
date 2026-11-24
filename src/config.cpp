@@ -597,7 +597,6 @@ namespace config {
     platf::appdata().string() + "/sunshine.log",  // log file
     false,  // notify_pre_releases
     false,  // legacy_ordering
-    true,  // system_tray
     {},  // prep commands
     {},  // state commands
     {},  // server commands
@@ -1293,7 +1292,6 @@ namespace config {
     bool_f(vars, "native_pen_touch", input.native_pen_touch);
     bool_f(vars, "enable_input_only_mode", input.enable_input_only_mode);
 
-    bool_f(vars, "system_tray", sunshine.system_tray);
     bool_f(vars, "hide_tray_controls", sunshine.hide_tray_controls);
     bool_f(vars, "enable_pairing", sunshine.enable_pairing);
     bool_f(vars, "enable_discovery", sunshine.enable_discovery);
@@ -1522,12 +1520,7 @@ namespace config {
         WaitForSingleObject(shell_exec_info.hProcess, INFINITE);
         CloseHandle(shell_exec_info.hProcess);
 
-        // Wait for the UI to be ready for connections
-        service_ctrl::wait_for_ui_ready();
       }
-
-      // Launch the web UI
-      launch_ui();
 
       // Always return 1 to ensure Sunshine doesn't start normally
       return 1;

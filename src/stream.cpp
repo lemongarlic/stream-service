@@ -31,7 +31,7 @@ extern "C" {
 #include "process.h"
 #include "stream.h"
 #include "sync.h"
-#include "system_tray.h"
+#include "control.h"
 #include "thread_safe.h"
 #include "utility.h"
 
@@ -601,9 +601,11 @@ namespace stream {
           break;
         case ENET_EVENT_TYPE_CONNECT:
           BOOST_LOG(info) << "CLIENT CONNECTED"sv;
+          control::event("clientConnected", {{"uuid", session->device_uuid}, {"name", session->device_name}});
           break;
         case ENET_EVENT_TYPE_DISCONNECT:
           BOOST_LOG(info) << "CLIENT DISCONNECTED"sv;
+          control::event("clientDisconnected", {{"uuid", session->device_uuid}, {"name", session->device_name}});
           // No more clients to send video data to ^_^
           if (session->state == session::state_e::RUNNING) {
             session::stop(*session);
