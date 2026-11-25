@@ -105,6 +105,12 @@ namespace proc {
     KITTY_DEFAULT_CONSTR_MOVE_THROW(proc_t)
 
     std::string display_name;
+    // The screen the stream is meant to show (Screen Mode's virtual screen, or the main one in Mirror), as set by the
+    // session alone: display_name follows whatever the capture has open, which lags behind a switch.
+    std::string stream_screen;
+    const std::string &own_screen() const {
+      return stream_screen.empty() ? display_name : stream_screen;
+    }
     std::string initial_display;
     std::string mode_changed_display;
     bool initial_hdr = false;

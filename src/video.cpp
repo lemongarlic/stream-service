@@ -1152,6 +1152,18 @@ namespace video {
     }
   }
 
+  /**
+   * @brief The display a switch asks for: one by its place in the list, or (-1) the stream's own screen, which is
+   * taken wherever it is in the list, whichever screen was being captured before.
+   */
+  int switched_display(int to, const std::vector<std::string> &display_names, int current_display_index) {
+    if (to >= 0) {
+      return std::clamp(to, 0, (int) display_names.size() - 1);
+    }
+    auto own = std::find(display_names.begin(), display_names.end(), proc::proc.own_screen());
+    return own == display_names.end() ? current_display_index : (int) (own - display_names.begin());
+  }
+
   void refresh_displays(platf::mem_type_e dev_type, std::vector<std::string> &display_names, int &current_display_index) {
     static std::string empty_str = "";
     refresh_displays(dev_type, display_names, current_display_index, empty_str);
@@ -1407,17 +1419,16 @@ namespace video {
               disp.reset();
 
               // Refresh display names since a display removal might have caused the reinitialization
-              refresh_displays_for(encoder.platform_formats->dev_type, display_names, display_p, proc::proc.display_name);
+              auto own_screen = proc::proc.own_screen();
+              refresh_displays_for(encoder.platform_formats->dev_type, display_names, display_p, own_screen);
 
               // Process any pending display switch with the new list of displays
               // (-1: the stream's own screen, proc::proc.display_name, as found above)
               if (switch_display_event->peek()) {
-                if (auto to = *switch_display_event->pop(); to >= 0) {
-                  display_p = std::clamp(to, 0, (int) display_names.size() - 1);
-                }
+                display_p = switched_display(*switch_display_event->pop(), display_names, display_p);
               }
 
-              BOOST_LOG(info) << "Capturing "sv << display_names[display_p] << " (the stream's screen: "sv << proc::proc.display_name << ')';
+              BOOST_LOG(info) << "Capturing "sv << display_names[display_p] << " (the stream's screen: "sv << proc::proc.own_screen() << ')';
 
               // reset_display() will sleep between retries
               reset_display(disp, encoder.platform_formats->dev_type, display_names[display_p], capture_ctxs.front().config);
@@ -2243,16 +2254,15 @@ namespace video {
 
     while (encode_session_ctx_queue.running()) {
       // Refresh display names since a display removal might have caused the reinitialization
-      refresh_displays_for(encoder.platform_formats->dev_type, display_names, display_p, proc::proc.display_name);
+      auto own_screen = proc::proc.own_screen();
+      refresh_displays_for(encoder.platform_formats->dev_type, display_names, display_p, own_screen);
 
       // Process any pending display switch with the new list of displays (-1: the stream's own screen, as found above)
       if (switch_display_event->peek()) {
-        if (auto to = *switch_display_event->pop(); to >= 0) {
-          display_p = std::clamp(to, 0, (int) display_names.size() - 1);
-        }
+        display_p = switched_display(*switch_display_event->pop(), display_names, display_p);
       }
 
-      BOOST_LOG(info) << "Capturing "sv << display_names[display_p] << " (the stream's screen: "sv << proc::proc.display_name << ')';
+      BOOST_LOG(info) << "Capturing "sv << display_names[display_p] << " (the stream's screen: "sv << proc::proc.own_screen() << ')';
 
       // reset_display() will sleep between retries
       reset_display(disp, encoder.platform_formats->dev_type, display_names[display_p], synced_session_ctxs.front()->config);

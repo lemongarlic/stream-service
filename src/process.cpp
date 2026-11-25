@@ -249,6 +249,7 @@ namespace proc {
       // Set virtual_display to true when everything went fine
       this->virtual_display = true;
       this->display_name = platf::to_utf8(vdisplayName);
+      this->stream_screen = this->display_name;
 
       // When using virtual display, we don't care which display user configured to use.
       // So we always set output_name to the newly created virtual display as a workaround for
@@ -260,7 +261,7 @@ namespace proc {
     }
     // Screen Mode's Solo: the virtual screen the only one on
     if (this->virtual_display && config::video.screen_mode == "solo") {
-      VDISPLAY::isolateDisplay(platf::from_utf8(this->display_name).c_str());
+      VDISPLAY::isolateDisplay(platf::from_utf8(this->stream_screen).c_str());
     }
     return this->virtual_display;
   }
@@ -284,7 +285,7 @@ namespace proc {
     } else if (mode != "mirror") {
       // Solo and Dual trade: the virtual screen alone, or beside the others again
       if (mode == "solo") {
-        VDISPLAY::isolateDisplay(platf::from_utf8(this->display_name).c_str());
+        VDISPLAY::isolateDisplay(platf::from_utf8(this->stream_screen).c_str());
       } else {
         VDISPLAY::endIsolation();
       }
@@ -292,6 +293,7 @@ namespace proc {
       // Mirror: the main screen streamed, the virtual one gone
       VDISPLAY::endIsolation();
       this->display_name = platf::to_utf8(VDISPLAY::getPrimaryDisplay());
+      this->stream_screen = this->display_name;
       config::video.output_name = display_device::map_display_name(this->display_name);
       VDISPLAY::removeVirtualDisplay(_launch_session->display_guid);
       _launch_session->virtual_display = false;
@@ -839,6 +841,7 @@ namespace proc {
     _app_name.clear();
     _app = {};
     display_name.clear();
+    stream_screen.clear();
     initial_display.clear();
     mode_changed_display.clear();
     _launch_session.reset();
