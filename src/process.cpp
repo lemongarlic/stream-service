@@ -208,6 +208,12 @@ namespace proc {
 
     memcpy(&_launch_session->display_guid, &device_uuid, sizeof(GUID));
 
+    // Solo: the screen twice the client's size each way, the picture scaled down to the client's (at the client's own
+    // size, a small screen alone has everything on it huge)
+    const uint32_t screen_scale = config::video.screen_mode == "solo" ? 2 : 1;
+    const uint32_t screen_width = (uint32_t) _launch_session->width * screen_scale;
+    const uint32_t screen_height = (uint32_t) _launch_session->height * screen_scale;
+
     int target_fps = _launch_session->fps ? _launch_session->fps : 60000;
 
     if (target_fps < 1000) {
@@ -221,8 +227,8 @@ namespace proc {
     std::wstring vdisplayName = VDISPLAY::createVirtualDisplay(
       device_uuid_str.c_str(),
       device_name.c_str(),
-      (uint32_t) _launch_session->width,
-      (uint32_t) _launch_session->height,
+      screen_width,
+      screen_height,
       target_fps,
       _launch_session->display_guid
     );
@@ -237,13 +243,13 @@ namespace proc {
       // Don't change display settings when no params are given
       if (_launch_session->width && _launch_session->height && _launch_session->fps) {
         // Apply display settings
-        VDISPLAY::changeDisplaySettings(vdisplayName.c_str(), (uint32_t) _launch_session->width, (uint32_t) _launch_session->height, target_fps);
+        VDISPLAY::changeDisplaySettings(vdisplayName.c_str(), screen_width, screen_height, target_fps);
       }
 
       // Check the ISOLATED DISPLAY configuration setting and rearrange the displays
       if (config::video.isolated_virtual_display_option == true) {
         // Apply the isolated display settings
-        VDISPLAY::changeDisplaySettings2(vdisplayName.c_str(), (uint32_t) _launch_session->width, (uint32_t) _launch_session->height, target_fps, true);
+        VDISPLAY::changeDisplaySettings2(vdisplayName.c_str(), screen_width, screen_height, target_fps, true);
       }
 
       // Set virtual_display to true when everything went fine
@@ -304,11 +310,14 @@ namespace proc {
         switch_display->raise(-1);
       }
     } else if (mode != "mirror") {
-      // Solo and Dual trade: the virtual screen alone, or beside the others again
-      if (mode == "solo") {
-        VDISPLAY::isolateDisplay(platf::from_utf8(this->stream_screen).c_str());
-      } else {
-        VDISPLAY::endIsolation();
+      // Solo and Dual trade: the virtual screen made again at the mode's size, alone or beside the others
+      hdr_back();
+      VDISPLAY::endIsolation();
+      VDISPLAY::removeVirtualDisplay(_launch_session->display_guid);
+      this->virtual_display = false;
+      if (create_virtual_display()) {
+        hdr_taken();
+        switch_display->raise(-1);
       }
     } else if (this->virtual_display) {
       // Mirror: the main screen streamed, the virtual one gone
