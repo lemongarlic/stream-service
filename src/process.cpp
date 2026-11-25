@@ -274,12 +274,33 @@ namespace proc {
       return;
     }
     auto switch_display = mail::man->event<int>(mail::switch_display);
+    // HDR follows the stream's screen: the one it leaves gets its own back (before Solo turns it off, to come back
+    // with it), the one it moves to the client's
+    auto hdr_back = [this]() {
+      if (!mode_changed_display.empty()) {
+        VDISPLAY::setDisplayHDRByName(platf::from_utf8(mode_changed_display).c_str(), initial_hdr);
+        mode_changed_display.clear();
+      }
+    };
+    auto hdr_taken = [this]() {
+      if (config::video.dd.hdr_option != config::video_t::dd_t::hdr_option_e::automatic) {
+        return;
+      }
+      auto name = platf::from_utf8(this->stream_screen);
+      initial_hdr = VDISPLAY::getDisplayHDRByName(name.c_str());
+      mode_changed_display = this->stream_screen;
+      if (initial_hdr != _launch_session->enable_hdr) {
+        VDISPLAY::setDisplayHDRByName(name.c_str(), _launch_session->enable_hdr);
+      }
+    };
     if (mode != "mirror" && !this->virtual_display) {
       // a virtual screen now, the capture moved to it
+      hdr_back();
       if (vDisplayDriverStatus != VDISPLAY::DRIVER_STATUS::OK) {
         initVDisplayDriver();
       }
       if (vDisplayDriverStatus == VDISPLAY::DRIVER_STATUS::OK && create_virtual_display()) {
+        hdr_taken();
         switch_display->raise(-1);
       }
     } else if (mode != "mirror") {
@@ -291,6 +312,7 @@ namespace proc {
       }
     } else if (this->virtual_display) {
       // Mirror: the main screen streamed, the virtual one gone
+      mode_changed_display.clear();
       VDISPLAY::endIsolation();
       this->display_name = platf::to_utf8(VDISPLAY::getPrimaryDisplay());
       this->stream_screen = this->display_name;
@@ -298,6 +320,7 @@ namespace proc {
       VDISPLAY::removeVirtualDisplay(_launch_session->display_guid);
       _launch_session->virtual_display = false;
       this->virtual_display = false;
+      hdr_taken();
       switch_display->raise(-1);
     }
 #endif
