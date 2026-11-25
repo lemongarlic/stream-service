@@ -1213,6 +1213,41 @@ namespace {
 	// the layout from before isolateDisplay, while it's on
 	std::vector<DISPLAYCONFIG_PATH_INFO> isolatedFromPaths;
 	std::vector<DISPLAYCONFIG_MODE_INFO> isolatedFromModes;
+	// its screens that had HDR on: a screen turned off and on again comes back without it
+	std::vector<std::pair<LUID, UINT32>> isolatedFromHdr;
+
+	// HDR as the user has it for a screen (not the older advanced colour state, which reads on for wide colour too)
+	struct hdr_info_t {
+		DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+		UINT32 value;
+		UINT32 colorEncoding;
+		UINT32 bitsPerColorChannel;
+		UINT32 activeColorMode;
+	};
+	struct hdr_state_t {
+		DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+		UINT32 value;
+	};
+	constexpr UINT32 GET_HDR_INFO = 15, SET_HDR_STATE = 16, HDR_USER_ENABLED = 0x20;
+
+	bool hdrOn(const LUID& adapter, UINT32 target) {
+		hdr_info_t info = {};
+		info.header.type = (DISPLAYCONFIG_DEVICE_INFO_TYPE) GET_HDR_INFO;
+		info.header.size = sizeof(info);
+		info.header.adapterId = adapter;
+		info.header.id = target;
+		return DisplayConfigGetDeviceInfo(&info.header) == ERROR_SUCCESS && (info.value & HDR_USER_ENABLED);
+	}
+
+	bool setHdr(const LUID& adapter, UINT32 target, bool on) {
+		hdr_state_t state = {};
+		state.header.type = (DISPLAYCONFIG_DEVICE_INFO_TYPE) SET_HDR_STATE;
+		state.header.size = sizeof(state);
+		state.header.adapterId = adapter;
+		state.header.id = target;
+		state.value = on ? 1 : 0;
+		return DisplayConfigSetDeviceInfo(&state.header) == ERROR_SUCCESS;
+	}
 }
 
 bool isolateDisplay(const wchar_t* deviceName) {
@@ -1255,6 +1290,11 @@ bool isolateDisplay(const wchar_t* deviceName) {
 		if (isolatedFromPaths.empty()) {
 			isolatedFromPaths = paths;
 			isolatedFromModes = modes;
+			for (const auto& other : paths) {
+				if (&other != &path && hdrOn(other.targetInfo.adapterId, other.targetInfo.id)) {
+					isolatedFromHdr.emplace_back(other.targetInfo.adapterId, other.targetInfo.id);
+				}
+			}
 		}
 		return SetDisplayConfig(1, &only, (UINT32) onlyModes.size(), onlyModes.data(), SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES) == ERROR_SUCCESS;
 	}
@@ -1270,8 +1310,14 @@ bool endIsolation() {
 		(UINT32) isolatedFromModes.size(), isolatedFromModes.data(),
 		SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES
 	) == ERROR_SUCCESS;
+	for (const auto& [adapter, target] : isolatedFromHdr) {
+		if (!hdrOn(adapter, target)) {
+			setHdr(adapter, target, true);
+		}
+	}
 	isolatedFromPaths.clear();
 	isolatedFromModes.clear();
+	isolatedFromHdr.clear();
 	return ok;
 }
 
